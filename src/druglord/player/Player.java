@@ -2,6 +2,7 @@ package druglord.player;
 
 import druglord.game.City;
 import druglord.items.*;
+import druglord.utils.Globals;
 
 import java.awt.Image;
 import java.util.ArrayList;
@@ -22,6 +23,9 @@ public class Player {
 
 	//Player inventory
 	private static ArrayList<Item> inventory;
+	
+	//The amount of cash carried by this player
+	private double cash;
 
 	//The player's maximum carrying capacity
 	private int carryingCapacity;
@@ -30,7 +34,7 @@ public class Player {
 	private Weapon equippedWeapon;
 	
 	//Global player notoriety
-	private double notoriety;
+	private int notoriety;
 	
 	//City the player is currently in
 	private City currentCity;
@@ -42,7 +46,11 @@ public class Player {
 		this.health = health;
 		this.avatar = avatar;
 		inventory = new ArrayList<Item>(8);
-		notoriety = 0;
+		for (int i = 0; i < inventory.size(); i++)
+			inventory.add(null);
+		notoriety = 325;
+		cash = 1000.0;
+		carryingCapacity = 8;
 	}
 	
 	//get city
@@ -60,6 +68,36 @@ public class Player {
 	public ArrayList<Item> getInventory()
 	{
 		return inventory;
+	}
+	
+	public void addCash(double cash)
+	{
+		this.cash += cash;
+	}
+	
+	public String[] inventoryToArray()
+	{
+		int len = 0;
+		for (int i = 0; i < inventory.size(); i++)
+			if (inventory.get(i) != null)
+				len++;
+				
+		String[] inv = new String[len];
+		for (int i = 0; i < inv.length; i++)
+		{
+			String item = inventory.get(i).getDescription();
+			for (int j = 0; j < 15-inventory.get(i).getDescription().length(); j++)
+				item = item.concat(" ");
+			item = item.concat("x"+inventory.get(i).getQuantity());
+			
+			inv[i] = item;
+		}
+		return inv;
+	}
+	
+	public double getCash()
+	{
+		return cash;
 	}
 	
 	public void giveItem(Item i)
@@ -82,5 +120,46 @@ public class Player {
 		for (Item item: inventory)
 			if (item == i)
 				item = null;
+	}
+	
+	public void removeItem(int index)
+	{
+		inventory.remove(index);
+	}
+
+	public boolean hasFullInventory() {
+		return inventory.size() == carryingCapacity;
+	}
+
+	public void setCarryingCapacity(int carryingCapacity) {
+		this.carryingCapacity = carryingCapacity;
+	}
+
+	public int getHealth() {
+		return health;
+	}
+	
+	public void heal(int amount)
+	{
+		health += amount;
+		if (health >= Globals.MAX_HEALTH)
+			health = 100;
+	}
+
+	public void damage(int amount) {
+		health -= amount;
+	}
+	
+	public boolean isDead()
+	{
+		return health <= 0;
+	}
+
+	public int getNotoriety() {
+		return notoriety;
+	}
+
+	public void addNotoriety(int notoriety) {
+		this.notoriety += notoriety;
 	}
 }

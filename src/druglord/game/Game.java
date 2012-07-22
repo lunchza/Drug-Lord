@@ -16,6 +16,10 @@ import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Scanner;
 import javax.swing.*;
+import javax.swing.event.ChangeEvent;
+import javax.swing.event.ChangeListener;
+import javax.swing.event.ListSelectionEvent;
+import javax.swing.event.ListSelectionListener;
 
 import druglord.items.*;
 import druglord.player.Player;
@@ -24,9 +28,7 @@ import druglord.utils.Globals;
 
 @SuppressWarnings("serial")
 public class Game extends JFrame implements ActionListener, MouseListener, MouseMotionListener {
-	
-
-	
+		
 	//save file
 	private static File saveFile;
 	
@@ -42,13 +44,38 @@ public class Game extends JFrame implements ActionListener, MouseListener, Mouse
 	static final int CLICKED_CONTINUE = 2;
 	static final int CLICKED_OPTIONS = 3;
 	
-
-	
 	//Mouse coordinate
 	private int mouseX, mouseY;
 	
-	//World map image
-	private Image mapImage;
+	//Travel coordinate
+	private int curX, curY;
+	
+	//Determines if a player is currently en-route
+	private boolean travelling;
+	
+	//Determines whether or not the shop dialog is shown
+	private boolean shopActive;
+	
+	//Determines whether or not the stats dialog is shown
+	private boolean statsActive;
+	
+	//World map image, current Plane image and paused image
+	private Image mapImage, planeImg, pausedImg;
+	
+	//Shop tab image
+	private ImageIcon shopImage, shopAltImage;
+	
+	//Stats tab image
+	private ImageIcon statsImage, statsAltImage;
+	
+	//Plane images
+	private Image planeUpImg, planeDownImg, planeLeftImg, planeRightImg;
+	
+	//Player portrait
+	private static Image portrait;
+	
+	//Game drug market
+	Market market;
 	
 	//list of cities
 	private static ArrayList<City> cities;
@@ -60,13 +87,16 @@ public class Game extends JFrame implements ActionListener, MouseListener, Mouse
 	private JPopupMenu popupMenu;
 	
 	//menu items for the popup menu
-	private JMenuItem travelButton, pricesButton;
+	private JMenuItem travelButton, pricesButton, historiesButton;
 	
 	//Determines which city was clicked
 	private City clickedCity;
 	
 	//Components on the button panel
-	private JButton inventoryButton, statsButton, priceButton;
+	private JButton inventoryButton, statsButton, priceButton, shopButton;
+	
+	//Time control components
+	private JButton pause, normalSpeed, doubleSpeed, quadSpeed, insaneSpeed;
 		
 	//The screen that shows the player's inventory
 	private InventoryScreen invScreen;
@@ -74,17 +104,40 @@ public class Game extends JFrame implements ActionListener, MouseListener, Mouse
 	//The screen that shows city prices
 	private PricesScreen priceScreen;
 	
+	//the screen that shows price histories
+	private HistoryWindow historyWindow;
+	
+	//The game timer
+	private GameTimer timer;
+	
+	/**
+	 * SHOP ITEMS
+	 */
+	private JLabel marketLabel, invLabel;
+	private JLabel cashLabel, sellLabel;
+	private JList marketList, invList;
+	private ListSelectionListener listListener;
+	private JSlider slider;
+	private JLabel quantityLabel;
+	private JButton buyButton, sellButton, confirmButton;
+	private boolean buying, selling;
+	
+	/**
+	 * STATS ITEMS
+	 */
+	
 	
 	public Game()
 	{
 		super ("Druglord " + Globals.VERSION);
 			
-		frameWidth = 1280;
-		frameHeight =960;
+		frameWidth = 1024;
+		frameHeight =768;
 		
 		setSize(frameWidth, frameHeight);
 		setResizable(false);
 		setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+		setLocationRelativeTo(null);
 		addMouseListener(this);
 		addMouseMotionListener(this);
 		
@@ -97,46 +150,225 @@ public class Game extends JFrame implements ActionListener, MouseListener, Mouse
 	
 	private void load()
 	{
+		market = new Market();
+		
 		cities = new ArrayList<City>();
+		
+		portrait = new ImageIcon("images/portrait.jpg").getImage();
+
 		mapImage = new ImageIcon("images/worldmap.jpg").getImage();
+		planeDownImg = new ImageIcon("images/plane-down.jpg").getImage();
+		planeLeftImg = new ImageIcon("images/plane-left.jpg").getImage();
+		planeRightImg = new ImageIcon("images/plane-right.jpg").getImage();
+		planeUpImg = new ImageIcon("images/plane-up.jpg").getImage();
+		
+		planeImg = planeUpImg;
+		
+		pausedImg = new ImageIcon("images/paused.png").getImage();
+		shopImage = new ImageIcon("images/shop.png");
+		shopAltImage = new ImageIcon("images/shop2.png");
+		statsImage = new ImageIcon("images/stats.png");
+		statsAltImage = new ImageIcon("images/stats2.png");
+		
+		
 		saveFile = new File("saves/save.bin");
 		
+		curX = curY = -1;
+		
+		shopActive = false;
+		buying = selling = false;
+		
+		timer = new GameTimer();
+		
 		loadCityInfo();
-
 		
 		travelButton = new JMenuItem("Travel");
 		travelButton.addActionListener(this);
 		pricesButton = new JMenuItem("Prices");
 		pricesButton.addActionListener(this);
+		historiesButton = new JMenuItem("Trends");
+		historiesButton.addActionListener(this);
 		
 		popupMenu = new JPopupMenu();
 		popupMenu.add(travelButton);
 		popupMenu.add(pricesButton);
+		popupMenu.add(historiesButton);
 		
 		inventoryButton = new JButton("Inventory");
 		inventoryButton.addActionListener(this);
-		
 		inventoryButton.setBounds(200, 20, 100, 25);
 		
-		statsButton = new JButton("Stats");
-		statsButton.addActionListener(this);
-		
-		statsButton.setBounds(300, 20, 100, 25);
+		//statsButton = new JButton("Stats");
+		//statsButton.addActionListener(this);
+		//statsButton.setBounds(300, 20, 100, 25);
 		
 		priceButton = new JButton("Prices");
 		priceButton.addActionListener(this);
-		
 		priceButton.setBounds(400, 20, 100, 25);
+		
+		pause = new JButton(new ImageIcon("images/pause.jpg"));
+		pause.addActionListener(this);
+		pause.setBounds(844, 75, 32, 32);
+
+		
+		normalSpeed = new JButton(new ImageIcon("images/normalSpeed.jpg"));
+		normalSpeed.addActionListener(this);
+		normalSpeed.setBounds(876, 75, 32, 32);
+		
+		doubleSpeed = new JButton(new ImageIcon("images/doubleSpeed.jpg"));
+		doubleSpeed.addActionListener(this);
+		doubleSpeed.setBounds(908, 75, 32, 32);
+		
+		quadSpeed = new JButton(new ImageIcon("images/quadSpeed.jpg"));
+		quadSpeed.addActionListener(this);
+		quadSpeed.setBounds(940, 75, 32, 32);
+		
+		insaneSpeed = new JButton(new ImageIcon("images/insaneSpeed.jpg"));
+		insaneSpeed.addActionListener(this);
+		insaneSpeed.setBounds(972, 75, 32, 32);
+		
+		pause.setBorder(BorderFactory.createLineBorder(Color.GRAY));
+		normalSpeed.setBorder(BorderFactory.createLineBorder(Color.BLUE));
+		doubleSpeed.setBorder(BorderFactory.createLineBorder(Color.GRAY));
+		quadSpeed.setBorder(BorderFactory.createLineBorder(Color.GRAY));
+		insaneSpeed.setBorder(BorderFactory.createLineBorder(Color.GRAY));
+		
+		shopButton = new JButton(shopImage);
+		shopButton.addActionListener(this);
+		shopButton.setBounds(0, 470, 50, 270);
+		//shopButton.setVisible(false);
+		
+		statsButton = new JButton(statsImage);
+		statsButton.addActionListener(this);
+		statsButton.setBounds(0, 0, 49, 198);
+		
 			
 		gamePanel = new GamePanel();
+		gamePanel.setLayout(null);
 		gamePanel.add(inventoryButton);
 		gamePanel.add(statsButton);
 		gamePanel.add(priceButton);
+		gamePanel.add(shopButton);
+		
+		gamePanel.add(pause);
+		gamePanel.add(normalSpeed);
+		gamePanel.add(doubleSpeed);
+		gamePanel.add(quadSpeed);
+		gamePanel.add(insaneSpeed);
+		
+		/**
+		 * SHOP INIT
+		 */
+		marketLabel = new JLabel("Market prices");
+		marketLabel.setBounds(10, 465, 100, 25);
+		marketLabel.setVisible(false);
+		invLabel = new JLabel("Your inventory");
+		invLabel.setBounds(135, 465, 100, 25);
+		invLabel.setVisible(false);
+		sellLabel = new JLabel("Sells for: ");
+		sellLabel.setBounds(5, 710, 120, 25);
+		sellLabel.setVisible(false);
+		
+		listListener = new ListListener();
+		
+		marketList = new JList(Globals.drugNameList);
+		marketList.setBounds(10, 485, 105, 200);
+		marketList.addListSelectionListener(listListener);
+		marketList.setBorder(BorderFactory.createLineBorder(Color.BLACK));
+		marketList.setVisible(false);
+		
+		invList = new JList();
+		invList.setBounds(135, 485, 105, 175);
+		invList.addListSelectionListener(listListener);
+		invList.setBorder(BorderFactory.createLineBorder(Color.BLACK));
+		invList.setVisible(false);
+		
+		buyButton = new JButton("Buy");
+		buyButton.addActionListener(this);
+		buyButton.setBounds(135, 670, 100, 25);
+		buyButton.setVisible(false);
+		
+		sellButton = new JButton("Sell");
+		sellButton.addActionListener(this);
+		sellButton.setBounds(135, 705, 100, 25);
+		sellButton.setVisible(false);
+		
+		slider = new JSlider();
+		slider.setBounds(300, 680, 200, 75);
+		slider.setMinimum(1);
+		slider.setMinorTickSpacing(1);
+		//slider.setMajorTickSpacing(10);
+		slider.setPaintLabels(true);
+		slider.setPaintTicks(true);
+		slider.setVisible(false);
+		
+		cashLabel = new JLabel("Cash: ");
+		cashLabel.setBounds(10, 685, 100, 25);
+		cashLabel.setVisible(false);
+		
+		quantityLabel = new JLabel("");
+		quantityLabel.setForeground(new Color(118, 201, 255));
+		quantityLabel.setBounds(350, 650, 175, 25);
+		quantityLabel.setVisible(false);
+		
+		confirmButton = new JButton("Confirm");
+		confirmButton.addActionListener(this);
+		confirmButton.setBounds(505, 715, 100, 25);
+		confirmButton.setVisible(false);
+		
+		slider.addChangeListener(new ChangeListener(){
+
+			@Override
+			public void stateChanged(ChangeEvent e) {
+				String action;
+				if (buying)
+					action = "Buying";
+				else
+					action = "Selling";
+				quantityLabel.setText("");
+				String labelText = action + " " + quantityLabel.getText() + " " + slider.getValue() +  ((slider.getValue() > 1) ? " units." : " unit.");
+				if (action.equals("Buying"))
+				{
+					int numBought = slider.getValue();
+					double value = player.getCurrentCity().getPriceList().get(marketList.getSelectedIndex()+2);
+					double total = numBought*value;
+					total = (double)Math.round(total * 10 / 10);
+					labelText = labelText.concat(" for " + total + "c");
+				}
+				
+				else
+				{
+					int numBought = slider.getValue();
+					double value =player.getInventory().get(invList.getSelectedIndex()).getValue();
+					double total = numBought*value;
+					total = (double)Math.round(total * 10 / 10);
+					labelText = labelText.concat(" for " + total + "c");
+				}
+						
+				quantityLabel.setText(labelText);			
+			}
+			
+		});
+		
+		gamePanel.add(marketLabel);
+		gamePanel.add(invLabel);
+		gamePanel.add(marketList);
+		gamePanel.add(invList);
+		gamePanel.add(cashLabel);
+		gamePanel.add(sellLabel);
+		gamePanel.add(buyButton);
+		gamePanel.add(sellButton);
+		gamePanel.add(slider);
+		gamePanel.add(quantityLabel);
+		gamePanel.add(confirmButton);
+		/**************/
 		
 		invScreen = new InventoryScreen();
 		invScreen.repaint();
 		priceScreen = new PricesScreen();
 		priceScreen.repaint();
+		historyWindow = new HistoryWindow();
+		historyWindow.repaint();
 
 		add(gamePanel);
 	}
@@ -170,7 +402,6 @@ public class Game extends JFrame implements ActionListener, MouseListener, Mouse
 				prices.put(Globals.MDMA, mdmaPrice);
 				prices.put(Globals.SPEED, speedPrice);
 				prices.put(Globals.HEROIN, heroinPrice);
-				
 				
 				City city = new City(name, x, y);
 				city.setPrices(prices);
@@ -217,18 +448,24 @@ public class Game extends JFrame implements ActionListener, MouseListener, Mouse
 						//player = new Player("lunch", 18, 100, new ImageIcon("images/portrait.jpg").getImage());
 						
 						//TODO: remove this test code
-						player.giveItem(new Drug(Globals.WEED, "images/items/weed.jpg", "weed", "OG Kush", 33, 999, 96));
-						player.giveItem(new Drug(Globals.WEED, "images/items/weed2.jpg", "weed", "AK-47", 5, 800, 80));
-						player.giveItem(new Weapon(Globals.PISTOL, "images/items/pistol.jpg", "pistol" , "Glock", 1, 1000, 2, 4));
-						for (int i = 0; i < 5; i++)
-							player.giveItem(null);
+						//player.giveItem(new Drug(Globals.WEED, "images/items/weed.jpg", "weed", "WEED", 33, 999, 96));
+						//player.giveItem(new Drug(Globals.WEED, "images/items/weed.jpg", "weed", "WEED", 33, 999, 96));
+						//player.giveItem(new Drug(Globals.WEED, "images/items/weed.jpg", "weed", "WEED", 33, 999, 96));
+						//player.giveItem(new Drug(Globals.WEED, "images/items/weed.jpg", "weed", "WEED", 33, 999, 96));
+						//player.giveItem(new Drug(Globals.WEED, "images/items/weed.jpg", "weed", "WEED", 33, 999, 96));
+						//player.giveItem(new Drug(Globals.WEED, "images/items/weed.jpg", "weed", "WEED", 33, 999, 96));
+						//player.giveItem(new Drug(Globals.WEED, "images/items/weed.jpg", "weed", "WEED", 33, 999, 96));
+						player.giveItem(new Drug(Globals.WEED, "images/items/weed.jpg", "weed", "AK-47", 5, 800, 80));
+						player.giveItem(new Weapon(Globals.PISTOL, "images/items/pistol.jpg", "pistol" , "GLOCK", 1, 1000, 2, 4));
 						playerCreationMenu.dispose();
 						new Thread(){
 							public void run()
 							{
 								setVisible(true);
+								Thread timerThread = new Thread(timer);
+								timerThread.start();
 								while(true)
-								{
+								{		
 								gameLoop();
 								}
 							}
@@ -248,9 +485,79 @@ public class Game extends JFrame implements ActionListener, MouseListener, Mouse
 		if (priceScreen.isVisible())
 			priceScreen.repaint();
 		
+		if (timer.isDueForUpdate())
+			updateCityPrices();
+		
 		gamePanel.repaint();
+		
+		try {
+			Thread.sleep(1);
+		} catch (InterruptedException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
 	}
 	
+	public void toggleShop()
+	{
+		if (shopActive)
+		{		
+			//populate market list
+			String[] list = new String[Globals.drugNameList.length];
+			for (int i = 0; i < list.length; i++)
+			{
+				int len = Globals.drugNameList[i].length();
+				String item = Globals.drugNameList[i];
+				for (int j = 0; j < 15-len; j++)
+					item = item.concat(" ");
+				item = item.concat(""+player.getCurrentCity().getPriceList().get(Globals.drugList[i]));
+				item = item.concat("c");
+				item = list[i] = item;
+			}
+			marketList.setListData(list);
+			
+			//populate inventory list
+			invList.setListData(player.inventoryToArray());
+			
+			//set cash label
+			cashLabel.setText("Cash: " + (double)Math.round(player.getCash() * 100 / 100) + "c");
+			
+			marketLabel.setVisible(true);
+			invLabel.setVisible(true);
+			marketList.setVisible(true);
+			invList.setVisible(true);
+			buyButton.setVisible(true);
+			sellButton.setVisible(true);
+			cashLabel.setVisible(true);
+			buyButton.setEnabled(false);
+			sellButton.setEnabled(false);
+		}
+		else
+		{
+			marketLabel.setVisible(false);
+			invLabel.setVisible(false);
+			marketList.setVisible(false);
+			invList.setVisible(false);
+			buyButton.setVisible(false);
+			sellButton.setVisible(false);
+			cashLabel.setVisible(false);
+			slider.setVisible(false);
+			sellLabel.setVisible(false);
+			confirmButton.setVisible(false);
+			quantityLabel.setVisible(false);
+			buyButton.setEnabled(false);
+			sellButton.setEnabled(false);
+		}
+	}
+	
+	private void updateCityPrices() {
+		for (City city: cities)
+			market.adjustPrices(city);
+		
+		priceScreen.updatePrices(priceScreen.cityBox.getSelectedIndex());
+		timer.removeUpdateFlag();
+	}
+
 	public void showInventory()
 	{
 		invScreen.populateInventoryScreen();
@@ -276,6 +583,11 @@ public class Game extends JFrame implements ActionListener, MouseListener, Mouse
 		priceScreen.requestFocus();
 	}
 	
+	/**
+	 * Get drug name from it's ID
+	 * @param ID - The ID of the drug
+	 * @return the name of the drug
+	 */
 	public String getDrugName(int ID)
 	{
 		switch(ID)
@@ -306,37 +618,360 @@ public class Game extends JFrame implements ActionListener, MouseListener, Mouse
 	
 	public void actionPerformed(ActionEvent e)
 	{
+		if (timer.isPaused() && e.getSource() != normalSpeed && e.getSource() != doubleSpeed && e.getSource() != quadSpeed && e.getSource() != insaneSpeed)
+		{
+			return;
+		}
+		
 		if (e.getSource() == inventoryButton)
 		{
 				showInventory();
 		}
 		
-		if (e.getSource() == statsButton)
-		{
-			
-		}
-		
 		if (e.getSource() == priceButton)
 		{
-			showPrices(cities.indexOf(player.getCurrentCity()));
+			if(player.getCurrentCity() != null)
+				showPrices(cities.indexOf(player.getCurrentCity()));
+			else
+				showPrices(0);
+		}
+		
+		if (e.getSource() == historiesButton)
+		{
+			if (player.getCurrentCity() != null)
+				showTrends(cities.indexOf(player.getCurrentCity()));
+			else
+				showTrends(0);
+		}
+		
+		if (e.getSource() == statsButton)
+		{
+			System.out.println("Weed history length: " + player.getCurrentCity().getWeedPriceHistory().size());
+			new Thread()
+			{
+				public void run()
+				{
+					if (!statsActive)
+					{
+						statsButton.setIcon(statsAltImage);
+					while (statsButton.getX() != 150)
+					{
+						statsButton.setLocation(statsButton.getX()+1, statsButton.getY());
+						try {
+							Thread.sleep(1);
+						} catch (InterruptedException e) {
+							// TODO Auto-generated catch block
+							e.printStackTrace();
+						}
+					}
+						//shop.setVisible(true);
+						statsActive = true;
+						//toggleShop();
+					}
+					else
+					{
+						statsActive = false;
+						//toggleShop();
+						//shop.setVisible(false);
+						statsButton.setIcon(statsImage);
+						while (statsButton.getX() != 0)
+						{
+							statsButton.setLocation(statsButton.getX()-1, statsButton.getY());
+							try {
+								Thread.sleep(1);
+							} catch (InterruptedException e) {
+								// TODO Auto-generated catch block
+								e.printStackTrace();
+							}
+						}	
+					}
+				}
+			}.start();
+		}
+		
+		if (e.getSource() == shopButton)
+		{
+			if (travelling)
+				return;
+			
+			new Thread()
+			{
+				public void run()
+				{
+					if (!shopActive)
+					{
+						shopButton.setIcon(shopAltImage);
+					while (shopButton.getX() != 250)
+					{
+						shopButton.setLocation(shopButton.getX()+1, shopButton.getY());
+						try {
+							Thread.sleep(1);
+						} catch (InterruptedException e) {
+							// TODO Auto-generated catch block
+							e.printStackTrace();
+						}
+					}
+						//shop.setVisible(true);
+						shopActive = true;
+						toggleShop();
+					}
+					else
+					{
+						shopActive = false;
+						toggleShop();
+						//shop.setVisible(false);
+						shopButton.setIcon(shopImage);
+						while (shopButton.getX() != 0)
+						{
+							shopButton.setLocation(shopButton.getX()-1, shopButton.getY());
+							try {
+								Thread.sleep(1);
+							} catch (InterruptedException e) {
+								// TODO Auto-generated catch block
+								e.printStackTrace();
+							}
+						}	
+					}
+				}
+			}.start();
+		}
+		
+		if (e.getSource() == buyButton)
+		{
+			buying = true;
+			double cash = player.getCash();
+			double value = player.getCurrentCity().getPriceList().get(marketList.getSelectedIndex()+2);
+			int max = (int)(cash / value);
+			int numBought = Math.min(max, Globals.STACK_MAXIMUM);
+			slider.setMaximum(numBought);
+			slider.setValue(max);
+			slider.setVisible(true);
+			confirmButton.setVisible(true);
+			quantityLabel.setText("");
+			quantityLabel.setText("Buying " + quantityLabel.getText() + " " + slider.getValue() +  (((slider.getValue() > 1) ? " units " : " unit ") + "for " + (numBought*value) + "c"));
+			quantityLabel.setVisible(true);
+		}
+		
+		if (e.getSource() == sellButton)
+		{
+			selling = true;
+			int numSold = player.getInventory().get(invList.getSelectedIndex()).getQuantity();
+			slider.setMaximum(numSold);
+			double value =player.getInventory().get(invList.getSelectedIndex()).getValue();
+			slider.setValue(slider.getMaximum());
+			slider.setVisible(true);
+			confirmButton.setVisible(true);
+			quantityLabel.setText("");
+			quantityLabel.setText("Selling " + quantityLabel.getText() + " " + slider.getValue() +  (((slider.getValue() > 1) ? " units " : " unit ") + "for " + (numSold*value) + "c"));
+			quantityLabel.setVisible(true);
+		}
+		
+		if (e.getSource() == confirmButton)//TODO: find out why prices are bugged!
+		{
+			if (buying)
+			{
+				if (!player.hasFullInventory())
+				{
+				int buyQuantity = slider.getValue();
+				double value = player.getCurrentCity().getPriceList().get(marketList.getSelectedIndex()+2);
+				double total_cost = buyQuantity*value;
+				System.out.println("Total cost: " + total_cost);
+				Item boughtItem = Globals.convertIDToItem(marketList.getSelectedIndex()+2);
+				player.addCash(total_cost*-1);
+				//if (Globals.isDrug(boughtItem.getID()))
+					//player.addCash(((Drug) boughtItem).getPurity());
+				boughtItem.setQuantity(buyQuantity);
+				boughtItem.setValue(value);
+				player.giveItem(boughtItem);
+				}
+				else
+					JOptionPane.showMessageDialog(null, "Inventory full!");
+			}
+			
+			else
+			{
+				int sellQuantity = slider.getValue();
+				Item soldItem = player.getInventory().get(invList.getSelectedIndex());
+				double value =soldItem.getValue();
+				double total_value = sellQuantity*value;
+				player.addCash(total_value);
+				//if (Globals.isDrug(soldItem.getID()))
+					//player.addCash(((Drug) player.getInventory().get(invList.getSelectedIndex())).getPurity());
+				player.removeItem(invList.getSelectedIndex());
+				
+			}
+			cashLabel.setText("Cash: " + (double)Math.round(player.getCash() * 100 / 100) + "c");
+			sellLabel.setVisible(false);
+			slider.setVisible(false);
+			quantityLabel.setVisible(false);
+			confirmButton.setVisible(false);
+			invScreen.populateInventoryScreen();
+			invList.setListData(player.inventoryToArray());
 		}
 		
 		if (e.getSource() == travelButton)
 		{
-			int result = JOptionPane.showConfirmDialog(null, "Travel to " + clickedCity.getName() + "? All flights free in this shitty beta", "Travel", JOptionPane.YES_NO_OPTION);
-			
-			if (result == JOptionPane.YES_OPTION)
+			if (!travelling)
 			{
-				player.setPlayerCity(clickedCity);
+				int result = JOptionPane.showConfirmDialog(null, "Travel to " + clickedCity.getName() + "? All flights free in this shitty beta", "Travel", JOptionPane.YES_NO_OPTION);
+			
+				if (result == JOptionPane.YES_OPTION)
+				{
+					if (shopActive)
+					{
+						actionPerformed(new ActionEvent(shopButton, 1, null));
+					}
+					travel(player.getCurrentCity(), clickedCity);
+				}
 			}
+			
+			else
+				JOptionPane.showMessageDialog(null, "Wait until you land");
 		}
 		
 		if (e.getSource() == pricesButton)
 		{
 			showPrices(cities.indexOf(clickedCity));
 		}
+		
+		if (e.getSource() == pause)
+		{
+			/*
+			if (travelling)
+			{
+				JOptionPane.showMessageDialog(null, "Cannot pause while travelling, sorry :<");
+				return;
+			}*/
+			
+			resetBorders();
+			pause.setBorder(BorderFactory.createLineBorder(Color.BLUE));
+			timer.setPaused(true);
+		}
+		
+		if (e.getSource() == normalSpeed)
+		{
+			resetBorders();
+			normalSpeed.setBorder(BorderFactory.createLineBorder(Color.BLUE));
+			timer.setSpeed(GameTimer.NORMAL_SPEED);
+		}
+		
+		if (e.getSource() == doubleSpeed)
+		{
+			resetBorders();
+			doubleSpeed.setBorder(BorderFactory.createLineBorder(Color.BLUE));
+			timer.setSpeed(GameTimer.DOUBLE_SPEED);
+		}
+		
+		if (e.getSource() == quadSpeed)
+		{
+			resetBorders();
+			quadSpeed.setBorder(BorderFactory.createLineBorder(Color.BLUE));
+			timer.setSpeed(GameTimer.QUAD_SPEED);
+		}
+		
+		if (e.getSource() == insaneSpeed)
+		{
+			resetBorders();
+			insaneSpeed.setBorder(BorderFactory.createLineBorder(Color.BLUE));
+			timer.setSpeed(GameTimer.INSANE_SPEED);
+		}
 	}
 	
+	private void showTrends(int indexOf) {
+		
+		
+		
+	}
+
+	private void resetBorders()
+	{
+		pause.setBorder(BorderFactory.createLineBorder(Color.GRAY));
+		normalSpeed.setBorder(BorderFactory.createLineBorder(Color.GRAY));
+		doubleSpeed.setBorder(BorderFactory.createLineBorder(Color.GRAY));
+		quadSpeed.setBorder(BorderFactory.createLineBorder(Color.GRAY));
+		insaneSpeed.setBorder(BorderFactory.createLineBorder(Color.GRAY));
+
+	}
+	
+	private void travel(final City sourceCity, final City targetCity) {
+		new Thread()
+		{
+
+			public void run()
+			{
+				int targetX = targetCity.getX();
+				int targetY = targetCity.getY();
+				curX = sourceCity.getX();
+				curY = sourceCity.getY();
+				player.setPlayerCity(null);
+				travelling = true;
+				//System.out.println("Travelling from (" + curX +  "," + curY + ") to (" + targetX + "," + targetY + ")");
+				
+				//determine plane orientation
+				
+				int xDiff = targetX - curX;
+				int yDiff = targetY - curY;
+				
+				if (xDiff > 0) //target is to the right
+				{
+					if (Math.abs(xDiff) > Math.abs(yDiff)) //x differential greater than y differential
+						planeImg = planeRightImg;
+					else
+						if (yDiff > 0)
+							planeImg = planeDownImg;
+						else
+							planeImg = planeUpImg;
+				}
+				
+				else
+				{
+					if (Math.abs(xDiff) > Math.abs(yDiff)) //x differential greater than y differential
+						planeImg = planeLeftImg;
+					else
+						if (yDiff > 0)
+							planeImg = planeDownImg;
+						else
+							planeImg = planeUpImg;
+				}
+				
+				while(curX != targetX || curY != targetY)
+				{
+					if (!timer.isPaused())
+					{
+						if (curX < targetX)
+							curX+=1;
+
+						else if (curX > targetX)
+							curX-=1;
+
+						if (curY < targetY)
+							curY+=1;
+
+						else if (curY > targetY)
+							curY-=1;
+
+						try {
+							Thread.sleep((int)(500*timer.getSpeed()));
+						} catch (InterruptedException e) {
+							e.printStackTrace();
+						}
+					}
+				}
+				
+				curX = curY = -1;
+				player.setPlayerCity(targetCity);
+				travelling = false;
+				resetSpeed();
+			}
+
+		}.start();
+	}
+	
+	private void resetSpeed()
+	{
+		actionPerformed(new ActionEvent(normalSpeed, 1, null));
+	}
+
 	@Override
 	public void mouseDragged(MouseEvent arg0) {
 		
@@ -369,7 +1004,8 @@ public class Game extends JFrame implements ActionListener, MouseListener, Mouse
 				else
 					travelButton.setEnabled(true);
 				
-				popupMenu.show(e.getComponent(), e.getX(), e.getY());
+				if (!timer.isPaused())
+					popupMenu.show(e.getComponent(), e.getX(), e.getY());
 				break;
 			}
 			else
@@ -416,7 +1052,11 @@ public class Game extends JFrame implements ActionListener, MouseListener, Mouse
 		{
 			g.drawImage(mapImage, 0, 0, null);
 			g.setColor(Color.WHITE);
-			g.drawString("(" + mouseX + "," + mouseY + ")", 0, 25);
+			//g.drawString("(" + mouseX + "," + mouseY + ")", 0, 25);
+			
+			//paint timer
+			g.drawString(timer.getDateInfo(), 852, 25);
+			g.drawString(timer.getTimeInfo(), 852, 50);
 			
 			//paint city rectangles
 			for (City city: cities)
@@ -440,8 +1080,128 @@ public class Game extends JFrame implements ActionListener, MouseListener, Mouse
 						g.fillRect(cityRect.x, cityRect.y, cityRect.width, cityRect.height);
 					}
 				}
+				
+				//if (!shopActive)
+				//	g.drawImage(shopImage, 0, 500, null);
+				
+			}
+			g.setColor(Color.WHITE);
+			if (timer.isPaused())
+			{
+				g.drawImage(pausedImg, 300, 350, null);
+			}
+			
+			g.setColor(Color.BLUE);
+			if (curX > 0 && curY > 0)
+			{
+				//g.fillRect(curX, curY, 10, 10);
+				g.drawImage(planeImg,curX-planeImg.getWidth(null)/2, curY-planeImg.getHeight(null)/2, null);
+			}
+			/*
+			g.setColor(new Color(118, 201, 255));
+			//calculate and draw notoriety meter
+			g.drawString("NOTORIETY", 700, 20);
+			
+			
+			g.drawOval(700, 50, 75, 75);
+			g.drawOval(710, 60, 55, 55);
+			
+			//first arc
+			if (player.getNotoriety() >= 0)
+			{
+				g.fillArc(700, 50, 20, 20, 0, 10);
+			}
+			*/
+			
+			
+			if (shopActive)
+			{
+				//setBounds(0, 470, 200, 270);
+				//setBorder(BorderFactory.createLineBorder(new Color(118, 201, 255)));
+				g.setColor(new Color(118, 201, 255));
+				g.fill3DRect(0,  470, 250, 270, true);
+				g.setColor(Color.BLACK);
+				g.drawLine(125, 470, 125, 740);
+				g.setColor(Color.WHITE);
+				g.drawRect(0, 470, 250, 269);
+			}
+			
+			if (statsActive)
+			{
+				g.setColor(new Color(118, 201, 255));
+				g.fill3DRect(0,  0, 150, 198, true);
+				g.drawImage(portrait, 10, 0, null);
+				g.setColor(Color.BLACK);
+				g.drawString("H:", 10, 150);
+				g.drawString("N:", 10, 170);
+				g.drawString("Cash: " + player.getCash() + "c",30, 190);
+				Rectangle currentHealthRect;
+				
+				//Draw maximum health rectangle
+				g.drawRect(30, 140, 100, 10);
+				//Draw maximum notoriety rectangle
+				g.drawRect(30, 160, 100, 10);
+				
+				//Calculate and draw current health rectangle
+				g.setColor(Color.RED);
+				g.fill3DRect(30, 140, player.getHealth()/Globals.MAX_HEALTH*100, 10, true);
+				
+				//Calculate and draw current notoriety rectangle
+				double percentage = (double)player.getNotoriety()/(double)Globals.MAX_NOTORIETY;
+				g.setColor(Color.BLUE);
+				g.fill3DRect(30, 160, (int)(percentage*100), 10, true);
+		
+				
+				g.setColor(Color.BLACK);
+				g.drawString(player.getHealth() + "/" + Globals.MAX_HEALTH, 60, 150);
+				g.drawString(player.getNotoriety() + "", 75, 170);
+				
 			}
 			super.paintComponents(g);
+		}
+	}
+	
+	private class ListListener implements ListSelectionListener
+	{
+		@Override
+		public void valueChanged(ListSelectionEvent e) {
+			buying = selling = false;
+			slider.setVisible(false);
+			quantityLabel.setVisible(false);
+			confirmButton.setVisible(false);
+			if (e.getSource() == marketList)
+			{
+				sellLabel.setVisible(false);
+				int newIndex = marketList.getSelectedIndex();
+				
+				if (!invList.isSelectionEmpty())
+					invList.clearSelection();
+				
+				marketList.setSelectedIndex(newIndex);
+				
+				buyButton.setEnabled(true);
+				sellButton.setEnabled(false);
+			}
+			
+			if (e.getSource() == invList)
+			{
+				int newIndex = invList.getSelectedIndex();
+				
+				if (newIndex >= 0)
+				{
+				sellLabel.setText("Orig. value: " + player.getInventory().get(newIndex).getValue() + "c");
+				sellLabel.setVisible(true);
+				}
+				
+				if (!marketList.isSelectionEmpty())
+					marketList.clearSelection();
+				
+				invList.setSelectedIndex(newIndex);
+				
+				sellButton.setEnabled(true);
+				buyButton.setEnabled(false);	
+			}
+			
 		}
 	}
 	
@@ -462,7 +1222,7 @@ public class Game extends JFrame implements ActionListener, MouseListener, Mouse
 		
 		public PricesScreen()
 		{
-			super("World prices");
+			super("World drug prices");
 			
 			setSize(400, 600);
 			setResizable(false);
@@ -595,10 +1355,15 @@ public class Game extends JFrame implements ActionListener, MouseListener, Mouse
 		//inventory buttons
 		private JButton equipButton, dropButton;
 		
+		//Player cash label
+		private JLabel cashLabel, cash;
+		
 		public InventoryScreen()
 		{
 			super("Inventory");
 			
+			cashLabel = new JLabel("Cash: ");
+			cash = new JLabel();
 			
 			equipButton = new JButton("Equip");
 			equipButton.addActionListener(this);
@@ -609,6 +1374,11 @@ public class Game extends JFrame implements ActionListener, MouseListener, Mouse
 			buttonPanel.setPreferredSize(new Dimension(80, 400));
 			buttonPanel.add(equipButton);
 			buttonPanel.add(dropButton);
+			buttonPanel.add(new JPanel());
+			JPanel cashPanel = new JPanel(new BorderLayout());
+			cashPanel.add(cashLabel, BorderLayout.NORTH);
+			cashPanel.add(cash, BorderLayout.CENTER);
+			buttonPanel.add(cashPanel);
 			
 			selectedSlot = null;
 			hoverSlot = null;
@@ -646,7 +1416,7 @@ public class Game extends JFrame implements ActionListener, MouseListener, Mouse
 			equipButton.setEnabled(false);
 			dropButton.setEnabled(false);
 					
-			for (int i = 0; i < 8; i++)
+			for (int i = 0; i < player.getInventory().size(); i++)
 			{
 				itemSlots.get(i).setItem(null); //reset item slot
 				itemSlots.get(i).setBorder(BorderFactory.createLineBorder(Color.BLACK));
@@ -655,8 +1425,9 @@ public class Game extends JFrame implements ActionListener, MouseListener, Mouse
 				{
 					itemSlots.get(i).setItem(player.getInventory().get(i));
 				}
-
+					
 			}
+			cash.setText("     " + (double)Math.round(player.getCash() * 100 / 100) + "c");
 			invPanel.repaint();
 		}
 		
@@ -669,12 +1440,16 @@ public class Game extends JFrame implements ActionListener, MouseListener, Mouse
 				Weapon clickedWeapon = (Weapon)selectedSlot.getItem();
 				equipButton.setText("Unequip");
 				player.equipWeapon(clickedWeapon);
+				selectedSlot.setEquipped(true);
+				selectedSlot.setBorder(BorderFactory.createLineBorder(Color.BLUE));
 				}
 				
 				else
 				{
 					equipButton.setText("Equip");
 					player.equipWeapon(null);
+					selectedSlot.setEquipped(false);
+					selectedSlot.setBorder(BorderFactory.createLineBorder(Color.RED));
 				}
 			}
 			
@@ -702,6 +1477,7 @@ public class Game extends JFrame implements ActionListener, MouseListener, Mouse
 		
 		private class InventoryPanel extends JPanel
 		{
+			/*
 			public void paint(Graphics g)
 			{
 				super.paintComponents(g);
@@ -725,7 +1501,7 @@ public class Game extends JFrame implements ActionListener, MouseListener, Mouse
 					}
 					
 					//Draw image icons and text for occupied slots
-					if (itemSlot.getItem() != null )
+					if (itemSlot.getItem() != null)
 					{
 						Point center = new Point(itemSlot.getX() +  itemSlot.getWidth()/2-itemSlot.getImage().getWidth(null)/2, itemSlot.getY() + itemSlot.getHeight()/2 - itemSlot.getImage().getHeight(null)/2);
 						g.drawImage(itemSlot.getImage(), center.x, center.y, null);
@@ -735,11 +1511,13 @@ public class Game extends JFrame implements ActionListener, MouseListener, Mouse
 						
 						switch(itemSlot.getItem().getID())
 						{
+						case Globals.DRUG:
 						case Globals.WEED:
 							g.drawString("Purity: " + ((Drug) itemSlot.getItem()).getPurity() + "%", center.x-20, center.y-15);
 							break;
 							
 						case Globals.WEAPON:
+						case Globals.PISTOL:
 							g.drawString("Ammo: " + ((Weapon) itemSlot.getItem()).getAmmo(), center.x-20, center.y);
 							g.drawString("Damage: " + ((Weapon) itemSlot.getItem()).getMinDamage() + "-" + ((Weapon) itemSlot.getItem()).getMaxDamage(), center.x-20, center.y-15);
 							break;
@@ -749,13 +1527,14 @@ public class Game extends JFrame implements ActionListener, MouseListener, Mouse
 						}
 					}
 				}
-			}
+			}*/
 		}
 		
 		private class ItemSlot extends JPanel implements MouseListener
 		{
 			private Item item;
 			private Image image;
+			private boolean equipped;
 			
 			public ItemSlot(Item item)
 			{
@@ -768,10 +1547,49 @@ public class Game extends JFrame implements ActionListener, MouseListener, Mouse
 				else
 					setToolTipText("Empty");
 				
+				equipped = false;
 				addMouseListener(this);
-				setBackground(Color.LIGHT_GRAY);
-				setOpaque(true);
+				setBackground(Color.DARK_GRAY);
+				//setOpaque(true);
 				setBorder(BorderFactory.createLineBorder(Color.BLACK));
+			}
+			
+			public void setEquipped(boolean b)
+			{
+				equipped = b;
+			}
+			
+			public void paintComponent(Graphics g)
+			{
+				if (item != null)
+				{
+				g.drawString(item.getDescription(), 15, 20);
+				g.drawString("Quantity: " + item.getQuantity(), 15, 40);
+				
+				g.drawImage(image, 30, 80, null);
+				
+					switch(item.getID())
+					{
+					case Globals.DRUG:
+					case Globals.WEED:
+					case Globals.MDMA:
+					case Globals.SPEED:
+					case Globals.HEROIN:
+						g.drawString("Purity: " + ((Drug) item).getPurity() + "%", 15, 160);
+						if(!travelling)
+							g.drawString("Value: " + player.getCurrentCity().getPriceList().get(item.getID()) + "c", 15, 185);
+						break;
+						
+					case Globals.WEAPON:
+					case Globals.PISTOL:
+						g.drawString("Ammo: " + ((Weapon) item).getAmmo(), 15, 60);
+						g.drawString("Damage: " + ((Weapon) item).getMinDamage() + "-" + ((Weapon) item).getMaxDamage(), 15, 160);
+						g.drawString("Value: " + item.getValue() + "c", 15, 185);
+						break;
+					}
+				}
+				else
+					g.drawString("Empty", 30, 100);
 			}
 			
 			public Item getItem()
@@ -799,6 +1617,7 @@ public class Game extends JFrame implements ActionListener, MouseListener, Mouse
 			public void mouseClicked(MouseEvent arg0) {
 				if (selectedSlot != null)
 					selectedSlot.setBorder(BorderFactory.createLineBorder(Color.BLACK));
+				setBorder(BorderFactory.createLineBorder(Color.RED));
 				if (item != null)
 				{
 					selectedSlot = this;
@@ -824,23 +1643,50 @@ public class Game extends JFrame implements ActionListener, MouseListener, Mouse
 					dropButton.setEnabled(false);
 				}
 				
+				//if (equipped)
+				//{
+				//	setBorder(BorderFactory.createLineBorder(Color.BLUE));	
+				//}
+				
+				for (ItemSlot i: itemSlots)
+				{
+					if (i.isEquipped())
+						i.setBorder(BorderFactory.createLineBorder(Color.BLUE));	
+				}
 			}
 
 			@Override
 			public void mouseEntered(MouseEvent arg0) {
+				if (hoverSlot != null)
+				{
+					hoverSlot.setBorder(BorderFactory.createLineBorder(Color.BLACK));
+				}
 				hoverSlot = this;
+				if (hoverSlot != selectedSlot)
+					setBorder(BorderFactory.createLineBorder(Color.GREEN));
+				
+				if (equipped)
+				{
+					setBorder(BorderFactory.createLineBorder(Color.BLUE));
+				}
 			}
 
 			@Override
 			public void mouseExited(MouseEvent arg0) {
 				hoverSlot = null;
-				setBorder(BorderFactory.createLineBorder(Color.BLACK));
+				if (selectedSlot != this)
+					setBorder(BorderFactory.createLineBorder(Color.BLACK));
+				if (equipped)
+				{
+					setBorder(BorderFactory.createLineBorder(Color.BLUE));
+				}
 			}
 
 			@Override
 			public void mousePressed(MouseEvent arg0) {
 				if (selectedSlot != null)
 					selectedSlot.setBorder(BorderFactory.createLineBorder(Color.BLACK));
+				setBorder(BorderFactory.createLineBorder(Color.RED));
 				if (item != null)
 				{
 					selectedSlot = this;
@@ -866,12 +1712,24 @@ public class Game extends JFrame implements ActionListener, MouseListener, Mouse
 					dropButton.setEnabled(false);
 				}
 				
+				//if (equipped)
+				//{
+				//	setBorder(BorderFactory.createLineBorder(Color.BLUE));	
+				//}
+				
+				for (ItemSlot i: itemSlots)
+				{
+					if (i.isEquipped())
+						i.setBorder(BorderFactory.createLineBorder(Color.BLUE));	
+				}
+			}
+
+			private boolean isEquipped() {
+				return equipped;
 			}
 
 			@Override
-			public void mouseReleased(MouseEvent arg0) {
-				// TODO Auto-generated method stub
-				
+			public void mouseReleased(MouseEvent arg0) {				
 			}
 		}
 
@@ -911,15 +1769,117 @@ public class Game extends JFrame implements ActionListener, MouseListener, Mouse
 		}	
 	}
 	
+	private static class HistoryWindow extends JFrame implements ActionListener, WindowListener
+	{
+		private JCheckBox weedBox, mdmaBox, speedBox, heroinBox;
+		
+		private JPanel choicePanel;
+		
+		private GraphPanel graphPanel;
+		
+		private static int width;
+
+		private static int height;
+		
+		
+		public HistoryWindow()
+		{
+			super("Price history");
+			
+			choicePanel = new JPanel();
+			choicePanel.setAlignmentY(JPanel.BOTTOM_ALIGNMENT);
+			
+			weedBox = new JCheckBox("Weed");
+			mdmaBox = new JCheckBox("MDMA");
+			speedBox = new JCheckBox("Speed");
+			heroinBox = new JCheckBox("Heroin");
+			
+			choicePanel.add(weedBox);
+			choicePanel.add(mdmaBox);
+			choicePanel.add(speedBox);
+			choicePanel.add(heroinBox);
+			
+			graphPanel = new GraphPanel();
+			
+			setLayout(new BorderLayout());
+			
+			add(choicePanel, BorderLayout.NORTH);
+			add(graphPanel, BorderLayout.CENTER);
+			
+			width = height = 500;
+			setSize(width, height);
+			setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
+			setVisible(true);
+		}
+
+		@Override
+		public void windowActivated(WindowEvent arg0) {
+			// TODO Auto-generated method stub
+			
+		}
+
+		@Override
+		public void windowClosed(WindowEvent arg0) {
+			// TODO Auto-generated method stub
+			
+		}
+
+		@Override
+		public void windowClosing(WindowEvent arg0) {
+			// TODO Auto-generated method stub
+			
+		}
+
+		@Override
+		public void windowDeactivated(WindowEvent arg0) {
+			// TODO Auto-generated method stub
+			
+		}
+
+		@Override
+		public void windowDeiconified(WindowEvent arg0) {
+			// TODO Auto-generated method stub
+			
+		}
+
+		@Override
+		public void windowIconified(WindowEvent arg0) {
+			// TODO Auto-generated method stub
+			
+		}
+
+		@Override
+		public void windowOpened(WindowEvent arg0) {
+			// TODO Auto-generated method stub
+			
+		}
+
+		@Override
+		public void actionPerformed(ActionEvent arg0) {
+			// TODO Auto-generated method stub
+			
+		}
+		
+		private static class GraphPanel extends JPanel
+		{
+			public void paintComponent(Graphics g)
+			{
+				g.setColor(Color.BLACK);
+				g.fillRect(50, 0, width-100, height-100);
+				
+				g.setColor(Color.GREEN);
+				
+				super.paintComponents(g);
+			}
+		}
+	}
+	
 	
 	@SuppressWarnings("unused")
 	private static class PlayerCreationMenu extends JFrame
 	{
 		//Points left for distribution
 		private int remainingPoints;
-		
-		//Player portrait
-		private Image portrait;
 		
 		//List of possible player backgrounds
 		private String[] backgrounds = {"None", "Thief", "Thug", "Confidence man"};
@@ -1009,7 +1969,8 @@ public class Game extends JFrame implements ActionListener, MouseListener, Mouse
 			public PlayerCreationPanel() {
 				setBorder(BorderFactory.createLineBorder(Color.BLACK));
 				setLayout(null);
-				image = new ImageIcon("images/portrait.jpg").getImage();
+				
+				image = portrait;
 				
 				avatarLabel = new JLabel("Your avatar");
 				strLabel = new JLabel("Strength:");
@@ -1451,4 +2412,34 @@ public class Game extends JFrame implements ActionListener, MouseListener, Mouse
 			
 		}
 	}
+
+	/**
+	* This method makes the color in image transparent.
+	*
+	* @param im The image who's color needs to be made transparent.
+	* @param color The color which needs to be filtered out of the image.
+	* @return  Image from which the color has been removed.
+	* 
+	public static Image makeColorTransparent (Image im, final Color color) {
+	 
+	ImageFilter filter = new RGBImageFilter() {
+	 
+	// the color we are looking for... Alpha bits are set to opaque
+	public int markerRGB = color.getRGB() | 0xFF000000;
+	 
+	public final int filterRGB(int x, int y, int rgb) {
+	if ( ( rgb | 0xFF000000 ) == markerRGB ) {
+	// Mark the alpha bits as zero - transparent
+	return 0x00FFFFFF & rgb;
+	}
+	else {
+	// nothing to do
+	return rgb;
+	}
+	}
+	};
+	 
+	ImageProducer ip = new FilteredImageSource(im.getSource(), filter);
+	return Toolkit.getDefaultToolkit().createImage(ip);
+	}*/
 }

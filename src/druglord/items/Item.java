@@ -84,6 +84,11 @@ public abstract class Item {
 	public void setValue(double value) {
 		this.value = value;
 	}
+	
+	public void setQuantity(int q)
+	{
+		quantity = q;
+	}
 
 	public int getID() {
 		return ID;
