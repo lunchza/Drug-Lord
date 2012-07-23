@@ -1809,7 +1809,7 @@ public class Game extends JFrame implements ActionListener, MouseListener, Mouse
 			width = height = 500;
 			setSize(width, height);
 			setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
-			setVisible(true);
+			//setVisible(true);
 		}
 
 		@Override
